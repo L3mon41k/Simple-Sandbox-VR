@@ -26,6 +26,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
@@ -50,6 +52,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SimpleSandboxVR-OpenXR-test-debug
-          path: build/SimpleSandboxVR-PICO4.apk
+          path: build/SimpleSandboxVR-OpenXR-test.apk
           if-no-files-found: error
           retention-days: 14
