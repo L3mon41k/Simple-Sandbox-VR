@@ -646,7 +646,8 @@ func _release_held(controller_id: int) -> void:
 	if is_instance_valid(body):
 		body.freeze = false
 		body.gravity_scale = 1.0
-		body.linear_velocity = (held_data.get("throw_velocity", Vector3.ZERO) as Vector3).limit_length(5.0) + Vector3.UP * 0.35
+		var throw_velocity: Vector3 = held_data.get("throw_velocity", Vector3.ZERO)
+		body.linear_velocity = throw_velocity.limit_length(5.0) + Vector3.UP * 0.35
 		body.sleeping = false
 	held_by_controller.erase(controller_id)
 
