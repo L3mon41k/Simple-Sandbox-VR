@@ -141,6 +141,8 @@ func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
 	body.position = at
 	body.mass = 0.35
 	body.gravity_scale = 1.0
+	body.collision_layer = 1
+	body.collision_mask = 3
 	body.add_to_group("grabbable")
 	add_child(body)
 
@@ -157,6 +159,7 @@ func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = CUBE_SIZE
+	shape.margin = 0.001
 	collision.shape = shape
 	body.add_child(collision)
 
@@ -167,6 +170,8 @@ func _create_training_sword(at: Vector3) -> void:
 	body.position = at
 	body.mass = 0.65
 	body.gravity_scale = 1.0
+	body.collision_layer = 1
+	body.collision_mask = 3
 	body.add_to_group("grabbable")
 	body.contact_monitor = true
 	body.max_contacts_reported = 8
@@ -318,7 +323,7 @@ func _get_finger_nodes(hand: Node3D) -> Dictionary:
 		var root: Node3D = hand.get_node("Finger%d" % i)
 		result[names[i]] = {"base": root, "tip": root.get_node("DistalJoint")}
 	var thumb: Node3D = hand.get_node("Thumb")
-	result["thumb"] = {"base": thumb, "tip": thumb.get_node("ThumbTipJoint")}
+	result["thumb"] = {"base": thumb, "tip": thumb.get_node("ThumbTipJoint"), "is_thumb": true}
 	return result
 
 
@@ -331,7 +336,11 @@ func _update_hand_fingers(controller: XRController3D) -> void:
 	var fingers: Dictionary = hand_finger_nodes[controller_id]
 	var trigger_value := maxf(controller.get_float("trigger"), 1.0 if controller.is_button_pressed("trigger_click") else 0.0)
 	var grip_value := maxf(controller.get_float("grip"), 1.0 if controller.is_button_pressed("grip_click") else 0.0)
-	var thumb_touch := _controller_touch(controller, ["thumbstick_touch", "primary_touch", "secondary_touch", "ax_touch", "by_touch"])
+	var thumb_touch := _controller_touch(controller, ["thumbstick_touch", "primary_touch", "secondary_touch", "ax_touch", "by_touch", "thumbrest_touch", "a_touch", "b_touch", "x_touch", "y_touch"])
+	var stick := controller.get_vector2("primary")
+	if stick.length() < 0.1:
+		stick = controller.get_vector2("thumbstick")
+	thumb_touch = maxf(thumb_touch, clampf(stick.length() * 1.8, 0.0, 1.0))
 	_set_finger_curl(fingers["index"], clampf(trigger_value, 0.0, 1.0))
 	for name in ["middle", "ring", "pinky"]:
 		_set_finger_curl(fingers[name], clampf(grip_value, 0.0, 1.0))
@@ -351,8 +360,13 @@ func _set_finger_curl(joints: Dictionary, amount: float) -> void:
 	var base: Node3D = joints["base"]
 	var tip: Node3D = joints["tip"]
 	# Positive local X bends the fingers toward the palm surface.
-	base.rotation.x = lerpf(0.0, 1.05, amount)
-	tip.rotation.x = lerpf(0.0, 0.72, amount)
+	if joints.get("is_thumb", false):
+		base.rotation_degrees = Vector3(-30.0, 0.0, lerpf(30.0, -48.0, amount))
+		tip.rotation.z = lerpf(0.0, -0.85, amount)
+	else:
+		# Fold all four fingers tightly into the palm to form a closed fist.
+		base.rotation.x = lerpf(0.0, -1.75, amount)
+		tip.rotation.x = lerpf(0.0, -1.35, amount)
 
 
 func _add_hand_box(parent: Node3D, node_name: String, at: Vector3, dimensions: Vector3, material: Material) -> MeshInstance3D:
@@ -371,24 +385,30 @@ func _add_hand_collider(parent: XRController3D, collider_name: String) -> void:
 	var physical_hand := AnimatableBody3D.new()
 	physical_hand.name = collider_name
 	physical_hand.sync_to_physics = true
-	physical_hand.collision_layer = 1
+	# Hands use layer 2; props use layer 1 and listen to layer 2.
+	physical_hand.collision_layer = 2
 	physical_hand.collision_mask = 1
 	physical_hand.rotation_degrees.z = -90.0 if collider_name.begins_with("Left") else 90.0
 	parent.add_child(physical_hand)
-	_add_hand_sphere(physical_hand, Vector3(0.0, -0.005, -0.055), 0.105)
-	_add_hand_sphere(physical_hand, Vector3(-0.045, 0.0, -0.145), 0.045)
-	_add_hand_sphere(physical_hand, Vector3(0.0, 0.0, -0.16), 0.045)
-	_add_hand_sphere(physical_hand, Vector3(0.045, 0.0, -0.145), 0.045)
+
+	# Collision follows the visible hand silhouette instead of one oversized sphere.
+	_add_hand_box_collider(physical_hand, Vector3(0.0, 0.0, -0.045), Vector3(0.09, 0.045, 0.11))
+	for i in range(4):
+		var x := [0.032, 0.011, -0.011, -0.032][i]
+		var z := [-0.135, -0.145, -0.14, -0.125][i]
+		var length := [0.060, 0.075, 0.068, 0.052][i]
+		_add_hand_box_collider(physical_hand, Vector3(x, 0.0, z), Vector3(0.018, 0.018, length))
+	_add_hand_box_collider(physical_hand, Vector3(-0.055, 0.005, -0.075), Vector3(0.025, 0.022, 0.065))
 
 
-func _add_hand_sphere(parent: AnimatableBody3D, at: Vector3, radius: float) -> void:
+func _add_hand_box_collider(parent: AnimatableBody3D, at: Vector3, dimensions: Vector3) -> void:
 	var collision := CollisionShape3D.new()
-	var shape := SphereShape3D.new()
-	shape.radius = radius
+	var shape := BoxShape3D.new()
+	shape.size = dimensions
+	shape.margin = 0.001
 	collision.shape = shape
 	collision.position = at
 	parent.add_child(collision)
-
 
 func _create_energy_launcher(at: Vector3) -> void:
 	var body := RigidBody3D.new()
@@ -396,6 +416,8 @@ func _create_energy_launcher(at: Vector3) -> void:
 	body.position = at
 	body.mass = 0.55
 	body.gravity_scale = 0.0
+	body.collision_layer = 1
+	body.collision_mask = 3
 	body.add_to_group("grabbable")
 	add_child(body)
 
@@ -436,53 +458,49 @@ func _create_training_dummy(at: Vector3) -> void:
 	var platform := StaticBody3D.new()
 	platform.name = "DummyPlatform"
 	platform.position = at
+	platform.collision_layer = 1
+	platform.collision_mask = 3
 	add_child(platform)
 	var platform_mesh := MeshInstance3D.new()
 	var cylinder := CylinderMesh.new()
-	cylinder.top_radius = 0.48
-	cylinder.bottom_radius = 0.48
-	cylinder.height = 0.12
+	cylinder.top_radius = 0.42
+	cylinder.bottom_radius = 0.42
+	cylinder.height = 0.10
 	platform_mesh.mesh = cylinder
 	var platform_material := StandardMaterial3D.new()
 	platform_material.albedo_color = Color(0.22, 0.25, 0.29)
 	platform_material.metallic = 0.35
 	platform_mesh.material_override = platform_material
-	platform_mesh.position.y = 0.06
+	platform_mesh.position.y = 0.05
 	platform.add_child(platform_mesh)
 	var platform_shape := CollisionShape3D.new()
 	var platform_cylinder := CylinderShape3D.new()
-	platform_cylinder.radius = 0.48
-	platform_cylinder.height = 0.12
+	platform_cylinder.radius = 0.42
+	platform_cylinder.height = 0.10
 	platform_shape.shape = platform_cylinder
-	platform_shape.position.y = 0.06
+	platform_shape.position.y = 0.05
 	platform.add_child(platform_shape)
-	var suspended_at := at + Vector3(0.0, 0.55, 0.0)
-	var torso := _create_dummy_part("DummyTorso", suspended_at + Vector3(0.0, 1.25, 0.0), Vector3(0.32, 0.52, 0.20), 2.0)
-	var head := _create_dummy_part("DummyHead", suspended_at + Vector3(0.0, 1.67, 0.0), Vector3(0.24, 0.24, 0.24), 0.7)
-	var left_arm := _create_dummy_part("DummyLeftArm", suspended_at + Vector3(-0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
-	var right_arm := _create_dummy_part("DummyRightArm", suspended_at + Vector3(0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
-	var left_thigh := _create_dummy_part("DummyLeftThigh", suspended_at + Vector3(-0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
-	var right_thigh := _create_dummy_part("DummyRightThigh", suspended_at + Vector3(0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
-	var left_shin := _create_dummy_part("DummyLeftShin", suspended_at + Vector3(-0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
-	var right_shin := _create_dummy_part("DummyRightShin", suspended_at + Vector3(0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
-	var left_foot := _create_dummy_part("DummyLeftFoot", suspended_at + Vector3(-0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
-	var right_foot := _create_dummy_part("DummyRightFoot", suspended_at + Vector3(0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
-	# The mannequin is a rigid, motionless display dummy: all parts keep their colliders
-	# but are frozen in place, so props collide with it without making it sway.
 
+	# Compact orange mannequin, lowered close to the platform.
+	var base := at + Vector3(0.0, 0.10, 0.0)
+	var orange := Color(1.0, 0.34, 0.055)
+	_create_dummy_part("DummyTorso", base + Vector3(0.0, 0.72, 0.0), Vector3(0.25, 0.38, 0.16), orange)
+	_create_dummy_part("DummyHead", base + Vector3(0.0, 1.02, 0.0), Vector3(0.18, 0.18, 0.18), orange)
+	_create_dummy_part("DummyLeftArm", base + Vector3(-0.21, 0.74, 0.0), Vector3(0.10, 0.34, 0.11), orange)
+	_create_dummy_part("DummyRightArm", base + Vector3(0.21, 0.74, 0.0), Vector3(0.10, 0.34, 0.11), orange)
+	_create_dummy_part("DummyLeftThigh", base + Vector3(-0.08, 0.43, 0.0), Vector3(0.12, 0.27, 0.13), orange)
+	_create_dummy_part("DummyRightThigh", base + Vector3(0.08, 0.43, 0.0), Vector3(0.12, 0.27, 0.13), orange)
+	_create_dummy_part("DummyLeftShin", base + Vector3(-0.08, 0.20, 0.0), Vector3(0.105, 0.20, 0.115), orange)
+	_create_dummy_part("DummyRightShin", base + Vector3(0.08, 0.20, 0.0), Vector3(0.105, 0.20, 0.115), orange)
+	_create_dummy_part("DummyLeftFoot", base + Vector3(-0.08, 0.09, -0.045), Vector3(0.13, 0.08, 0.20), orange)
+	_create_dummy_part("DummyRightFoot", base + Vector3(0.08, 0.09, -0.045), Vector3(0.13, 0.08, 0.20), orange)
 
-func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, body_mass: float) -> RigidBody3D:
-	var body := RigidBody3D.new()
+func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, tint: Color) -> StaticBody3D:
+	var body := StaticBody3D.new()
 	body.name = part_name
 	body.position = at
-	body.mass = body_mass
-	body.gravity_scale = 0.0
-	body.linear_damp = 1.2
-	body.angular_damp = 2.0
 	body.collision_layer = 1
-	body.collision_mask = 1
-	body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
-	body.freeze = true
+	body.collision_mask = 3
 	body.add_to_group("dummy_parts")
 	add_child(body)
 	var mesh_instance := MeshInstance3D.new()
@@ -490,18 +508,18 @@ func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, bod
 	mesh.size = dimensions
 	mesh_instance.mesh = mesh
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.58, 0.64, 0.70)
-	material.metallic = 0.12
+	material.albedo_color = tint
+	material.metallic = 0.08
 	material.roughness = 0.72
 	mesh_instance.material_override = material
 	body.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = dimensions
+	shape.margin = 0.001
 	collision.shape = shape
 	body.add_child(collision)
 	return body
-
 
 func _create_dummy_joint(joint_name: String, body_a: Node3D, body_b: Node3D, at: Vector3) -> void:
 	var joint := PinJoint3D.new()
@@ -624,12 +642,12 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 			distance = controller.global_position.distance_to(closest_point)
 		elif candidate.name == "EnergyOrbLauncher":
 			# Only the visible handle is a valid pickup zone; 1.5 cm is tracking tolerance.
-			candidate_limit = 0.015
+			candidate_limit = 0.065
 			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0375, 0.08, 0.0375), Vector3(0.0, -0.055, 0.0))
 		elif candidate.name == "TrainingSword":
 			# Match the actual sword grip, not the guard or blade.
-			candidate_limit = 0.015
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0225, 0.0225, 0.10), Vector3(0.0, 0.0, 0.19))
+			candidate_limit = 0.065
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0325, 0.0325, 0.11), Vector3(0.0, 0.0, 0.19))
 		if distance <= candidate_limit and distance < nearest_distance:
 			nearest = candidate
 			nearest_distance = distance
