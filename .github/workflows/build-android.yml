@@ -83,6 +83,15 @@ jobs:
           mkdir -p build
           godot --headless --path . --install-android-build-template --export-debug "Android OpenXR test" build/SimpleSandboxVR-OpenXR-test.apk
 
+      - name: Verify PICO immersive manifest
+        run: |
+          APK="build/SimpleSandboxVR-OpenXR-test.apk"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml > build/manifest.txt
+          grep -q "pvr.app.type" build/manifest.txt || { echo "Missing PICO VR application metadata"; exit 1; }
+          grep -q "org.khronos.openxr.intent.category.IMMERSIVE_HMD" build/manifest.txt || { echo "Missing immersive OpenXR launch category"; exit 1; }
+          echo "PICO VR metadata and immersive OpenXR launch category are present."
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
