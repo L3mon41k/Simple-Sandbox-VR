@@ -339,6 +339,7 @@ func _update_controller_interaction(controller: XRController3D) -> void:
 	var controller_id := controller.get_instance_id()
 	var grip_pressed := controller.get_float("grip") > 0.55 or controller.is_button_pressed("grip_click")
 	var was_pressed: bool = previous_grip.get(controller_id, false)
+	var held_data: Dictionary = held_by_controller.get(controller_id, {})
 	var trigger_pressed := controller.get_float("trigger") > 0.65 or controller.is_button_pressed("trigger_click")
 	var was_trigger: bool = previous_trigger.get(controller_id, false)
 	if trigger_pressed and not was_trigger and not held_data.is_empty():
@@ -346,7 +347,6 @@ func _update_controller_interaction(controller: XRController3D) -> void:
 		if is_instance_valid(held_object) and held_object.name == "EnergyOrbLauncher":
 			_shoot_energy_orb(controller)
 	previous_trigger[controller_id] = trigger_pressed
-	var held_data: Dictionary = held_by_controller.get(controller_id, {})
 
 	if grip_pressed and not was_pressed and held_data.is_empty():
 		_try_grab_nearest(controller, controller_id)
