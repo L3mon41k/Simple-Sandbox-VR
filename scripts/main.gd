@@ -33,6 +33,15 @@ func _process(delta: float) -> void:
 	_move_player(delta)
 
 
+func _physics_process(_delta: float) -> void:
+	for projectile in get_tree().get_nodes_in_group("projectiles"):
+		if not is_instance_valid(projectile):
+			continue
+		var p: Vector3 = projectile.global_position
+		if absf(p.x) > FLOOR_SIZE.x * 0.5 or absf(p.z) > FLOOR_SIZE.z * 0.5 or p.y < -1.0 or p.y > 8.0:
+			projectile.queue_free()
+
+
 func _build_environment() -> void:
 	var world_environment := WorldEnvironment.new()
 	var environment := Environment.new()
@@ -287,6 +296,7 @@ func _add_hand_collider(parent: XRController3D, collider_name: String) -> void:
 	physical_hand.sync_to_physics = true
 	physical_hand.collision_layer = 1
 	physical_hand.collision_mask = 1
+	physical_hand.rotation_degrees.z = -90.0 if collider_name.begins_with("Left") else 90.0
 	parent.add_child(physical_hand)
 	_add_hand_sphere(physical_hand, Vector3(0.0, -0.005, -0.055), 0.105)
 	_add_hand_sphere(physical_hand, Vector3(-0.045, 0.0, -0.145), 0.045)
@@ -355,6 +365,7 @@ func _shoot_energy_orb(launcher: RigidBody3D) -> void:
 	orb.max_contacts_reported = 4
 	orb.collision_layer = 1
 	orb.collision_mask = 1
+	orb.add_to_group("projectiles")
 	add_child(orb)
 
 	var muzzle := launcher.to_global(Vector3(0.0, 0.045, -0.265))
