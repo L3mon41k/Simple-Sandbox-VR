@@ -299,7 +299,8 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 	var thumb := Node3D.new()
 	thumb.name = "Thumb"
 	thumb.position = Vector3(side * 0.052, 0.018, -0.035)
-	thumb.rotation_degrees.z = side * 30.0
+	# Lift the thumb away from the four fingers while keeping the mirrored hand pose.
+	thumb.rotation_degrees = Vector3(-30.0, 0.0, side * 30.0)
 	hand.add_child(thumb)
 	_add_hand_box(thumb, "ThumbBase", Vector3(0.0, 0.0, -0.025), Vector3(0.019, 0.018, 0.055), skin)
 	var thumb_tip := Node3D.new()
@@ -458,9 +459,21 @@ func _create_training_dummy(at: Vector3) -> void:
 	var head := _create_dummy_part("DummyHead", at + Vector3(0.0, 1.67, 0.0), Vector3(0.24, 0.24, 0.24), 0.7)
 	var left_arm := _create_dummy_part("DummyLeftArm", at + Vector3(-0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
 	var right_arm := _create_dummy_part("DummyRightArm", at + Vector3(0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
+	var left_thigh := _create_dummy_part("DummyLeftThigh", at + Vector3(-0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
+	var right_thigh := _create_dummy_part("DummyRightThigh", at + Vector3(0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
+	var left_shin := _create_dummy_part("DummyLeftShin", at + Vector3(-0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
+	var right_shin := _create_dummy_part("DummyRightShin", at + Vector3(0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
+	var left_foot := _create_dummy_part("DummyLeftFoot", at + Vector3(-0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
+	var right_foot := _create_dummy_part("DummyRightFoot", at + Vector3(0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
 	_create_dummy_joint("DummyHeadJoint", torso, head, at + Vector3(0.0, 1.52, 0.0))
 	_create_dummy_joint("DummyLeftShoulder", torso, left_arm, at + Vector3(-0.19, 1.48, 0.0))
 	_create_dummy_joint("DummyRightShoulder", torso, right_arm, at + Vector3(0.19, 1.48, 0.0))
+	_create_dummy_joint("DummyLeftHip", torso, left_thigh, at + Vector3(-0.105, 0.93, 0.0))
+	_create_dummy_joint("DummyRightHip", torso, right_thigh, at + Vector3(0.105, 0.93, 0.0))
+	_create_dummy_joint("DummyLeftKnee", left_thigh, left_shin, at + Vector3(-0.105, 0.50, 0.0))
+	_create_dummy_joint("DummyRightKnee", right_thigh, right_shin, at + Vector3(0.105, 0.50, 0.0))
+	_create_dummy_joint("DummyLeftAnkle", left_shin, left_foot, at + Vector3(-0.105, 0.17, -0.025))
+	_create_dummy_joint("DummyRightAnkle", right_shin, right_foot, at + Vector3(0.105, 0.17, -0.025))
 
 
 func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, body_mass: float) -> RigidBody3D:
