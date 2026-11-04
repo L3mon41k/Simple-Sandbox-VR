@@ -76,7 +76,14 @@ jobs:
           EOF
 
       - name: Validate project
-        run: godot --headless --editor --path . --quit
+        run: |
+          mkdir -p build
+          set -o pipefail
+          godot --headless --editor --path . --quit 2>&1 | tee build/validate.log
+          if grep -E "SCRIPT ERROR:|Parse Error:|Failed to load script" build/validate.log; then
+            echo "Godot reported script errors; refusing to export APK."
+            exit 1
+          fi
 
       - name: Export APK
         run: |
