@@ -4,7 +4,6 @@ const FLOOR_SIZE := Vector3(12.0, 0.2, 12.0)
 const CUBE_SIZE := Vector3(0.17, 0.17, 0.17)
 const MOVE_SPEED := 2.0
 const GRAB_DISTANCE := 0.38
-const WEAPON_GRIP_GRAB_DISTANCE := 0.11
 const HAND_PUSH_RADIUS := 0.105
 const ORB_SPEED := 19.0
 
@@ -203,12 +202,13 @@ func _on_sword_body_entered(other: Node, sword: RigidBody3D) -> void:
 	if not is_instance_valid(sword) or sword.freeze or other == null:
 		return
 	if other.is_in_group("dummy_parts"):
-		# Training sword rests against the dummy surface; it never penetrates it.
+		# Lock the prop to the dummy surface. It can be pulled free by grabbing its handle.
 		sword.freeze = true
 		sword.linear_velocity = Vector3.ZERO
 		sword.angular_velocity = Vector3.ZERO
 		sword.collision_layer = 0
 		sword.collision_mask = 0
+		sword.set_meta("embedded_in_dummy", true)
 		sword.reparent(other, true)
 
 
@@ -467,21 +467,8 @@ func _create_training_dummy(at: Vector3) -> void:
 	var right_shin := _create_dummy_part("DummyRightShin", suspended_at + Vector3(0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
 	var left_foot := _create_dummy_part("DummyLeftFoot", suspended_at + Vector3(-0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
 	var right_foot := _create_dummy_part("DummyRightFoot", suspended_at + Vector3(0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
-	# A fixed, invisible suspension point keeps the ragdoll floating while all joints remain physical.
-	var suspension_anchor := StaticBody3D.new()
-	suspension_anchor.name = "DummySuspensionAnchor"
-	suspension_anchor.global_position = torso.global_position
-	add_child(suspension_anchor)
-	_create_dummy_joint("DummySuspensionJoint", suspension_anchor, torso, torso.global_position)
-	_create_dummy_joint("DummyHeadJoint", torso, head, suspended_at + Vector3(0.0, 1.52, 0.0))
-	_create_dummy_joint("DummyLeftShoulder", torso, left_arm, suspended_at + Vector3(-0.19, 1.48, 0.0))
-	_create_dummy_joint("DummyRightShoulder", torso, right_arm, suspended_at + Vector3(0.19, 1.48, 0.0))
-	_create_dummy_joint("DummyLeftHip", torso, left_thigh, suspended_at + Vector3(-0.105, 0.93, 0.0))
-	_create_dummy_joint("DummyRightHip", torso, right_thigh, suspended_at + Vector3(0.105, 0.93, 0.0))
-	_create_dummy_joint("DummyLeftKnee", left_thigh, left_shin, suspended_at + Vector3(-0.105, 0.50, 0.0))
-	_create_dummy_joint("DummyRightKnee", right_thigh, right_shin, suspended_at + Vector3(0.105, 0.50, 0.0))
-	_create_dummy_joint("DummyLeftAnkle", left_shin, left_foot, suspended_at + Vector3(-0.105, 0.17, -0.025))
-	_create_dummy_joint("DummyRightAnkle", right_shin, right_foot, suspended_at + Vector3(0.105, 0.17, -0.025))
+	# The mannequin is a rigid, motionless display dummy: all parts keep their colliders
+	# but are frozen in place, so props collide with it without making it sway.
 
 
 func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, body_mass: float) -> RigidBody3D:
@@ -489,12 +476,13 @@ func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, bod
 	body.name = part_name
 	body.position = at
 	body.mass = body_mass
-	body.gravity_scale = 0.65
+	body.gravity_scale = 0.0
 	body.linear_damp = 1.2
 	body.angular_damp = 2.0
 	body.collision_layer = 1
 	body.collision_mask = 1
-	body.add_to_group("grabbable")
+	body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	body.freeze = true
 	body.add_to_group("dummy_parts")
 	add_child(body)
 	var mesh_instance := MeshInstance3D.new()
@@ -623,7 +611,8 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 		if not node is RigidBody3D:
 			continue
 		var candidate := node as RigidBody3D
-		if candidate.freeze:
+		var is_embedded_sword := candidate.name == "TrainingSword" and candidate.has_meta("embedded_in_dummy")
+		if candidate.freeze and not is_embedded_sword:
 			continue
 		var candidate_limit := GRAB_DISTANCE
 		var distance := controller.global_position.distance_to(candidate.global_position)
@@ -634,11 +623,13 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 			var closest_point := candidate.global_position + rod_axis * along
 			distance = controller.global_position.distance_to(closest_point)
 		elif candidate.name == "EnergyOrbLauncher":
-			candidate_limit = WEAPON_GRIP_GRAB_DISTANCE
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.05, 0.09, 0.05), Vector3(0.0, -0.055, 0.0))
+			# Only the visible handle is a valid pickup zone; 1.5 cm is tracking tolerance.
+			candidate_limit = 0.015
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0375, 0.08, 0.0375), Vector3(0.0, -0.055, 0.0))
 		elif candidate.name == "TrainingSword":
-			candidate_limit = WEAPON_GRIP_GRAB_DISTANCE
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.05, 0.05, 0.12), Vector3(0.0, 0.0, 0.19))
+			# Match the actual sword grip, not the guard or blade.
+			candidate_limit = 0.015
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0225, 0.0225, 0.10), Vector3(0.0, 0.0, 0.19))
 		if distance <= candidate_limit and distance < nearest_distance:
 			nearest = candidate
 			nearest_distance = distance
@@ -646,6 +637,11 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 	if nearest == null:
 		return
 
+	if nearest.name == "TrainingSword" and nearest.has_meta("embedded_in_dummy"):
+		nearest.reparent(self, true)
+		nearest.remove_meta("embedded_in_dummy")
+		nearest.collision_layer = 1
+		nearest.collision_mask = 1
 	nearest.freeze = true
 	nearest.sleeping = true
 	nearest.linear_velocity = Vector3.ZERO
