@@ -4,6 +4,7 @@ const FLOOR_SIZE := Vector3(12.0, 0.2, 12.0)
 const CUBE_SIZE := Vector3(0.17, 0.17, 0.17)
 const MOVE_SPEED := 2.0
 const GRAB_DISTANCE := 0.38
+const WEAPON_GRIP_GRAB_DISTANCE := 0.11
 const HAND_PUSH_RADIUS := 0.105
 const ORB_SPEED := 19.0
 
@@ -277,15 +278,15 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 
 	_add_hand_box(hand, "Palm", Vector3(0.0, 0.0, -0.045), Vector3(0.085, 0.025, 0.105), skin)
 
-	var finger_offsets := [
-		Vector3(-0.032, 0.0, -0.105), Vector3(-0.011, 0.0, -0.112),
-		Vector3(0.011, 0.0, -0.108), Vector3(0.032, 0.0, -0.096)
-	]
+	var side := -1.0 if is_left else 1.0
+	# Mirror the finger row so the index finger stays next to the thumb on both hands.
+	var finger_x_offsets := [0.032, 0.011, -0.011, -0.032]
+	var finger_z_offsets := [-0.105, -0.112, -0.108, -0.096]
 	var finger_lengths := [0.060, 0.075, 0.068, 0.052]
-	for i in range(finger_offsets.size()):
+	for i in range(finger_x_offsets.size()):
 		var finger := Node3D.new()
 		finger.name = "Finger%d" % i
-		finger.position = finger_offsets[i]
+		finger.position = Vector3(side * finger_x_offsets[i], 0.0, finger_z_offsets[i])
 		hand.add_child(finger)
 		var proximal_length: float = finger_lengths[i] * 0.58
 		_add_hand_box(finger, "ProximalMesh", Vector3(0.0, 0.0, -proximal_length * 0.5), Vector3(0.014, 0.014, proximal_length), skin)
@@ -294,7 +295,6 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 		distal.position = Vector3(0.0, 0.0, -proximal_length)
 		finger.add_child(distal)
 		_add_hand_box(distal, "DistalMesh", Vector3(0.0, 0.0, -finger_lengths[i] * 0.21), Vector3(0.012, 0.012, finger_lengths[i] * 0.42), skin)
-	var side := -1.0 if is_left else 1.0
 	hand.rotation_degrees.z = side * 90.0
 	var thumb := Node3D.new()
 	thumb.name = "Thumb"
@@ -350,8 +350,9 @@ func _controller_touch(controller: XRController3D, actions: Array) -> float:
 func _set_finger_curl(joints: Dictionary, amount: float) -> void:
 	var base: Node3D = joints["base"]
 	var tip: Node3D = joints["tip"]
-	base.rotation.x = lerpf(0.0, -1.05, amount)
-	tip.rotation.x = lerpf(0.0, -0.72, amount)
+	# Positive local X bends the fingers toward the palm surface.
+	base.rotation.x = lerpf(0.0, 1.05, amount)
+	tip.rotation.x = lerpf(0.0, 0.72, amount)
 
 
 func _add_hand_box(parent: Node3D, node_name: String, at: Vector3, dimensions: Vector3, material: Material) -> MeshInstance3D:
@@ -455,25 +456,32 @@ func _create_training_dummy(at: Vector3) -> void:
 	platform_shape.shape = platform_cylinder
 	platform_shape.position.y = 0.06
 	platform.add_child(platform_shape)
-	var torso := _create_dummy_part("DummyTorso", at + Vector3(0.0, 1.25, 0.0), Vector3(0.32, 0.52, 0.20), 2.0)
-	var head := _create_dummy_part("DummyHead", at + Vector3(0.0, 1.67, 0.0), Vector3(0.24, 0.24, 0.24), 0.7)
-	var left_arm := _create_dummy_part("DummyLeftArm", at + Vector3(-0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
-	var right_arm := _create_dummy_part("DummyRightArm", at + Vector3(0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
-	var left_thigh := _create_dummy_part("DummyLeftThigh", at + Vector3(-0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
-	var right_thigh := _create_dummy_part("DummyRightThigh", at + Vector3(0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
-	var left_shin := _create_dummy_part("DummyLeftShin", at + Vector3(-0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
-	var right_shin := _create_dummy_part("DummyRightShin", at + Vector3(0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
-	var left_foot := _create_dummy_part("DummyLeftFoot", at + Vector3(-0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
-	var right_foot := _create_dummy_part("DummyRightFoot", at + Vector3(0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
-	_create_dummy_joint("DummyHeadJoint", torso, head, at + Vector3(0.0, 1.52, 0.0))
-	_create_dummy_joint("DummyLeftShoulder", torso, left_arm, at + Vector3(-0.19, 1.48, 0.0))
-	_create_dummy_joint("DummyRightShoulder", torso, right_arm, at + Vector3(0.19, 1.48, 0.0))
-	_create_dummy_joint("DummyLeftHip", torso, left_thigh, at + Vector3(-0.105, 0.93, 0.0))
-	_create_dummy_joint("DummyRightHip", torso, right_thigh, at + Vector3(0.105, 0.93, 0.0))
-	_create_dummy_joint("DummyLeftKnee", left_thigh, left_shin, at + Vector3(-0.105, 0.50, 0.0))
-	_create_dummy_joint("DummyRightKnee", right_thigh, right_shin, at + Vector3(0.105, 0.50, 0.0))
-	_create_dummy_joint("DummyLeftAnkle", left_shin, left_foot, at + Vector3(-0.105, 0.17, -0.025))
-	_create_dummy_joint("DummyRightAnkle", right_shin, right_foot, at + Vector3(0.105, 0.17, -0.025))
+	var suspended_at := at + Vector3(0.0, 0.55, 0.0)
+	var torso := _create_dummy_part("DummyTorso", suspended_at + Vector3(0.0, 1.25, 0.0), Vector3(0.32, 0.52, 0.20), 2.0)
+	var head := _create_dummy_part("DummyHead", suspended_at + Vector3(0.0, 1.67, 0.0), Vector3(0.24, 0.24, 0.24), 0.7)
+	var left_arm := _create_dummy_part("DummyLeftArm", suspended_at + Vector3(-0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
+	var right_arm := _create_dummy_part("DummyRightArm", suspended_at + Vector3(0.28, 1.30, 0.0), Vector3(0.13, 0.48, 0.14), 0.65)
+	var left_thigh := _create_dummy_part("DummyLeftThigh", suspended_at + Vector3(-0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
+	var right_thigh := _create_dummy_part("DummyRightThigh", suspended_at + Vector3(0.105, 0.72, 0.0), Vector3(0.16, 0.42, 0.17), 0.9)
+	var left_shin := _create_dummy_part("DummyLeftShin", suspended_at + Vector3(-0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
+	var right_shin := _create_dummy_part("DummyRightShin", suspended_at + Vector3(0.105, 0.31, 0.0), Vector3(0.14, 0.36, 0.15), 0.65)
+	var left_foot := _create_dummy_part("DummyLeftFoot", suspended_at + Vector3(-0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
+	var right_foot := _create_dummy_part("DummyRightFoot", suspended_at + Vector3(0.105, 0.105, -0.055), Vector3(0.17, 0.12, 0.27), 0.35)
+	# A fixed, invisible suspension point keeps the ragdoll floating while all joints remain physical.
+	var suspension_anchor := StaticBody3D.new()
+	suspension_anchor.name = "DummySuspensionAnchor"
+	suspension_anchor.global_position = torso.global_position
+	add_child(suspension_anchor)
+	_create_dummy_joint("DummySuspensionJoint", suspension_anchor, torso, torso.global_position)
+	_create_dummy_joint("DummyHeadJoint", torso, head, suspended_at + Vector3(0.0, 1.52, 0.0))
+	_create_dummy_joint("DummyLeftShoulder", torso, left_arm, suspended_at + Vector3(-0.19, 1.48, 0.0))
+	_create_dummy_joint("DummyRightShoulder", torso, right_arm, suspended_at + Vector3(0.19, 1.48, 0.0))
+	_create_dummy_joint("DummyLeftHip", torso, left_thigh, suspended_at + Vector3(-0.105, 0.93, 0.0))
+	_create_dummy_joint("DummyRightHip", torso, right_thigh, suspended_at + Vector3(0.105, 0.93, 0.0))
+	_create_dummy_joint("DummyLeftKnee", left_thigh, left_shin, suspended_at + Vector3(-0.105, 0.50, 0.0))
+	_create_dummy_joint("DummyRightKnee", right_thigh, right_shin, suspended_at + Vector3(0.105, 0.50, 0.0))
+	_create_dummy_joint("DummyLeftAnkle", left_shin, left_foot, suspended_at + Vector3(-0.105, 0.17, -0.025))
+	_create_dummy_joint("DummyRightAnkle", right_shin, right_foot, suspended_at + Vector3(0.105, 0.17, -0.025))
 
 
 func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, body_mass: float) -> RigidBody3D:
@@ -507,7 +515,7 @@ func _create_dummy_part(part_name: String, at: Vector3, dimensions: Vector3, bod
 	return body
 
 
-func _create_dummy_joint(joint_name: String, body_a: RigidBody3D, body_b: RigidBody3D, at: Vector3) -> void:
+func _create_dummy_joint(joint_name: String, body_a: Node3D, body_b: Node3D, at: Vector3) -> void:
 	var joint := PinJoint3D.new()
 	joint.name = joint_name
 	add_child(joint)
@@ -617,6 +625,7 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 		var candidate := node as RigidBody3D
 		if candidate.freeze:
 			continue
+		var candidate_limit := GRAB_DISTANCE
 		var distance := controller.global_position.distance_to(candidate.global_position)
 		if candidate.name == "GripTestRod":
 			var rod_axis := candidate.global_basis.y.normalized()
@@ -625,10 +634,12 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 			var closest_point := candidate.global_position + rod_axis * along
 			distance = controller.global_position.distance_to(closest_point)
 		elif candidate.name == "EnergyOrbLauncher":
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.045, 0.085, 0.045), Vector3(0.0, -0.055, 0.0))
+			candidate_limit = WEAPON_GRIP_GRAB_DISTANCE
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.05, 0.09, 0.05), Vector3(0.0, -0.055, 0.0))
 		elif candidate.name == "TrainingSword":
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.04, 0.04, 0.11), Vector3(0.0, 0.0, 0.19))
-		if distance < nearest_distance:
+			candidate_limit = WEAPON_GRIP_GRAB_DISTANCE
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.05, 0.05, 0.12), Vector3(0.0, 0.0, 0.19))
+		if distance <= candidate_limit and distance < nearest_distance:
 			nearest = candidate
 			nearest_distance = distance
 
