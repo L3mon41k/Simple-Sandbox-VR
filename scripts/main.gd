@@ -323,7 +323,7 @@ func _get_finger_nodes(hand: Node3D) -> Dictionary:
 		var root: Node3D = hand.get_node("Finger%d" % i)
 		result[names[i]] = {"base": root, "tip": root.get_node("DistalJoint")}
 	var thumb: Node3D = hand.get_node("Thumb")
-	result["thumb"] = {"base": thumb, "tip": thumb.get_node("ThumbTipJoint"), "is_thumb": true}
+	result["thumb"] = {"base": thumb, "tip": thumb.get_node("ThumbTipJoint"), "is_thumb": true, "side": -1.0 if hand.name.begins_with("Left") else 1.0}
 	return result
 
 
@@ -336,7 +336,7 @@ func _update_hand_fingers(controller: XRController3D) -> void:
 	var fingers: Dictionary = hand_finger_nodes[controller_id]
 	var trigger_value := maxf(controller.get_float("trigger"), 1.0 if controller.is_button_pressed("trigger_click") else 0.0)
 	var grip_value := maxf(controller.get_float("grip"), 1.0 if controller.is_button_pressed("grip_click") else 0.0)
-	var thumb_touch := _controller_touch(controller, ["thumbstick_touch", "primary_touch", "secondary_touch", "ax_touch", "by_touch", "thumbrest_touch", "a_touch", "b_touch", "x_touch", "y_touch"])
+	var thumb_touch := _controller_touch(controller, ["thumbstick_touch", "primary_touch", "secondary_touch", "ax_touch", "by_touch", "thumbrest_touch", "a_touch", "b_touch", "x_touch", "y_touch", "primary_click", "secondary_click", "thumbstick_click"])
 	var stick := controller.get_vector2("primary")
 	if stick.length() < 0.1:
 		stick = controller.get_vector2("thumbstick")
@@ -359,10 +359,11 @@ func _controller_touch(controller: XRController3D, actions: Array) -> float:
 func _set_finger_curl(joints: Dictionary, amount: float) -> void:
 	var base: Node3D = joints["base"]
 	var tip: Node3D = joints["tip"]
-	# Positive local X bends the fingers toward the palm surface.
+	# Finger joints are driven by the controller grip and trigger values.
 	if joints.get("is_thumb", false):
-		base.rotation_degrees = Vector3(-30.0, 0.0, lerpf(30.0, -48.0, amount))
-		tip.rotation.z = lerpf(0.0, -0.85, amount)
+		var side: float = joints.get("side", 1.0)
+		base.rotation_degrees = Vector3(-30.0, 0.0, side * lerpf(30.0, -48.0, amount))
+		tip.rotation.z = side * lerpf(0.0, -0.85, amount)
 	else:
 		# Fold all four fingers tightly into the palm to form a closed fist.
 		base.rotation.x = lerpf(0.0, -1.75, amount)
@@ -641,7 +642,7 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 			var closest_point := candidate.global_position + rod_axis * along
 			distance = controller.global_position.distance_to(closest_point)
 		elif candidate.name == "EnergyOrbLauncher":
-			# Only the visible handle is a valid pickup zone; 1.5 cm is tracking tolerance.
+			# Only the visible handle is a valid pickup zone; a small tracking allowance avoids missed grabs.
 			candidate_limit = 0.065
 			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.0375, 0.08, 0.0375), Vector3(0.0, -0.055, 0.0))
 		elif candidate.name == "TrainingSword":
@@ -659,7 +660,7 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 		nearest.reparent(self, true)
 		nearest.remove_meta("embedded_in_dummy")
 		nearest.collision_layer = 1
-		nearest.collision_mask = 1
+		nearest.collision_mask = 3
 	nearest.freeze = true
 	nearest.sleeping = true
 	nearest.linear_velocity = Vector3.ZERO
