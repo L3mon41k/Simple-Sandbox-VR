@@ -395,10 +395,10 @@ func _add_hand_collider(parent: XRController3D, collider_name: String) -> void:
 	# Collision follows the visible hand silhouette instead of one oversized sphere.
 	_add_hand_box_collider(physical_hand, Vector3(0.0, 0.0, -0.045), Vector3(0.09, 0.045, 0.11))
 	for i in range(4):
-		var x := [0.032, 0.011, -0.011, -0.032][i]
-		var z := [-0.135, -0.145, -0.14, -0.125][i]
-		var length := [0.060, 0.075, 0.068, 0.052][i]
-		_add_hand_box_collider(physical_hand, Vector3(x, 0.0, z), Vector3(0.018, 0.018, length))
+		var x: float = [0.032, 0.011, -0.011, -0.032][i]
+		var z: float = [-0.135, -0.145, -0.14, -0.125][i]
+		var finger_length: float = [0.060, 0.075, 0.068, 0.052][i]
+		_add_hand_box_collider(physical_hand, Vector3(x, 0.0, z), Vector3(0.018, 0.018, finger_length))
 	_add_hand_box_collider(physical_hand, Vector3(-0.055, 0.005, -0.075), Vector3(0.025, 0.022, 0.065))
 
 
