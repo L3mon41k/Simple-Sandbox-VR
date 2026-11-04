@@ -4,8 +4,8 @@ const FLOOR_SIZE := Vector3(12.0, 0.2, 12.0)
 const CUBE_SIZE := Vector3(0.17, 0.17, 0.17)
 const MOVE_SPEED := 2.0
 const GRAB_DISTANCE := 0.38
-const HAND_PUSH_RADIUS := 0.075
-const ORB_SPEED := 7.0
+const HAND_PUSH_RADIUS := 0.105
+const ORB_SPEED := 19.0
 
 var xr_active := false
 var xr_origin: XROrigin3D
@@ -50,11 +50,11 @@ func _build_environment() -> void:
 	sun.light_color = Color(1.0, 0.94, 0.82)
 	sun.light_energy = 1.25
 	sun.shadow_enabled = true
-	sun.shadow_bias = 0.035
-	sun.shadow_normal_bias = 0.8
-	sun.shadow_blur = 2.0
+	sun.shadow_bias = 0.02
+	sun.shadow_normal_bias = 0.45
+	sun.shadow_blur = 0.5
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 24.0
+	sun.directional_shadow_max_distance = 16.0
 	add_child(sun)
 
 
@@ -81,10 +81,44 @@ func _build_world() -> void:
 	floor_shape.position.y = -0.1
 	floor_body.add_child(floor_shape)
 
-	_create_cube(Vector3(-0.32, 1.35, -1.2), Color(0.92, 0.12, 0.10), "RedCube")
-	_create_cube(Vector3(0.32, 1.75, -1.2), Color(0.08, 0.30, 0.96), "BlueCube")
-	_create_test_rod(Vector3(0.72, 1.25, -1.1))
-	_create_energy_launcher(Vector3(-0.72, 1.25, -1.1))
+	_create_table(Vector3(0.0, 0.0, -1.25))
+	_create_cube(Vector3(-0.62, 0.88, -1.18), Color(0.92, 0.12, 0.10), "RedCube")
+	_create_cube(Vector3(-0.20, 0.88, -1.18), Color(0.08, 0.30, 0.96), "BlueCube")
+	_create_test_rod(Vector3(0.28, 1.10, -1.18))
+	_create_energy_launcher(Vector3(0.70, 0.91, -1.18))
+
+
+func _create_table(at: Vector3) -> void:
+	var table := StaticBody3D.new()
+	table.name = "SandboxTable"
+	table.position = at
+	add_child(table)
+
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.34, 0.22, 0.13)
+	wood.roughness = 0.88
+	_add_table_part(table, "TableTop", Vector3(0.0, 0.74, 0.0), Vector3(1.9, 0.08, 0.95), wood)
+	for x in [-0.82, 0.82]:
+		for z in [-0.37, 0.37]:
+			_add_table_part(table, "Leg", Vector3(x, 0.36, z), Vector3(0.09, 0.72, 0.09), wood)
+
+
+func _add_table_part(parent: StaticBody3D, part_name: String, at: Vector3, dimensions: Vector3, material: Material) -> void:
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = part_name
+	var mesh := BoxMesh.new()
+	mesh.size = dimensions
+	mesh_instance.mesh = mesh
+	mesh_instance.position = at
+	mesh_instance.material_override = material
+	parent.add_child(mesh_instance)
+
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = dimensions
+	collision.shape = shape
+	collision.position = at
+	parent.add_child(collision)
 
 
 func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
@@ -224,11 +258,11 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 		_add_hand_box(finger, "Distal", Vector3(0.0, 0.0, -finger_lengths[i] * 0.72), Vector3(0.012, 0.012, finger_lengths[i] * 0.42), skin)
 
 	var side := -1.0 if is_left else 1.0
+	# Rotate the complete hand so the thumb side points upward.
+	hand.rotation_degrees.z = side * 90.0
 	var thumb := Node3D.new()
 	thumb.name = "Thumb"
 	thumb.position = Vector3(side * 0.052, 0.018, -0.035)
-	thumb.rotation_degrees.x = 90.0
-	thumb.rotation_degrees.z = side * 18.0
 	hand.add_child(thumb)
 	_add_hand_box(thumb, "ThumbBase", Vector3(0.0, 0.0, -0.025), Vector3(0.019, 0.018, 0.055), skin)
 	_add_hand_box(thumb, "ThumbTip", Vector3(0.0, 0.0, -0.060), Vector3(0.016, 0.016, 0.035), skin)
@@ -251,13 +285,22 @@ func _add_hand_collider(parent: XRController3D, collider_name: String) -> void:
 	var physical_hand := AnimatableBody3D.new()
 	physical_hand.name = collider_name
 	physical_hand.sync_to_physics = true
+	physical_hand.collision_layer = 1
+	physical_hand.collision_mask = 1
 	parent.add_child(physical_hand)
+	_add_hand_sphere(physical_hand, Vector3(0.0, -0.005, -0.055), 0.105)
+	_add_hand_sphere(physical_hand, Vector3(-0.045, 0.0, -0.145), 0.045)
+	_add_hand_sphere(physical_hand, Vector3(0.0, 0.0, -0.16), 0.045)
+	_add_hand_sphere(physical_hand, Vector3(0.045, 0.0, -0.145), 0.045)
+
+
+func _add_hand_sphere(parent: AnimatableBody3D, at: Vector3, radius: float) -> void:
 	var collision := CollisionShape3D.new()
 	var shape := SphereShape3D.new()
-	shape.radius = HAND_PUSH_RADIUS
+	shape.radius = radius
 	collision.shape = shape
-	collision.position = Vector3(0.0, -0.015, -0.075)
-	physical_hand.add_child(collision)
+	collision.position = at
+	parent.add_child(collision)
 
 
 func _create_energy_launcher(at: Vector3) -> void:
@@ -302,34 +345,53 @@ func _add_launcher_box(parent: Node3D, part_name: String, at: Vector3, dimension
 	parent.add_child(part)
 
 
-func _shoot_energy_orb(controller: XRController3D) -> void:
+func _shoot_energy_orb(launcher: RigidBody3D) -> void:
 	var orb := RigidBody3D.new()
 	orb.name = "EnergyOrb"
-	orb.mass = 0.08
+	orb.mass = 0.025
 	orb.gravity_scale = 0.0
 	orb.continuous_cd = true
+	orb.contact_monitor = true
+	orb.max_contacts_reported = 4
+	orb.collision_layer = 1
+	orb.collision_mask = 1
 	add_child(orb)
-	orb.global_position = controller.global_position + (-controller.global_basis.z * 0.24)
+
+	var muzzle := launcher.to_global(Vector3(0.0, 0.045, -0.265))
+	var direction := -launcher.global_basis.z.normalized()
+	orb.global_position = muzzle + direction * 0.045
 
 	var mesh_instance := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
-	sphere.radius = 0.055
-	sphere.height = 0.11
+	sphere.radius = 0.022
+	sphere.height = 0.044
 	mesh_instance.mesh = sphere
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.15, 0.85, 1.0)
+	material.albedo_color = Color(1.0, 0.035, 0.025)
 	material.emission_enabled = true
-	material.emission = Color(0.05, 0.55, 1.0)
-	material.emission_energy_multiplier = 2.0
+	material.emission = Color(1.0, 0.015, 0.005)
+	material.emission_energy_multiplier = 1.8
 	mesh_instance.material_override = material
 	orb.add_child(mesh_instance)
 
 	var collision := CollisionShape3D.new()
 	var sphere_shape := SphereShape3D.new()
-	sphere_shape.radius = 0.055
+	sphere_shape.radius = 0.022
 	collision.shape = sphere_shape
 	orb.add_child(collision)
-	orb.linear_velocity = -controller.global_basis.z * ORB_SPEED
+
+	orb.body_entered.connect(_on_energy_orb_body_entered.bind(orb))
+	get_tree().create_timer(4.0).timeout.connect(_remove_energy_orb.bind(orb))
+	orb.linear_velocity = direction * ORB_SPEED
+
+
+func _on_energy_orb_body_entered(_other: Node, orb: RigidBody3D) -> void:
+	_remove_energy_orb(orb)
+
+
+func _remove_energy_orb(orb: RigidBody3D) -> void:
+	if is_instance_valid(orb):
+		orb.queue_free()
 
 
 func _update_controller_interaction(controller: XRController3D) -> void:
@@ -345,7 +407,7 @@ func _update_controller_interaction(controller: XRController3D) -> void:
 	if trigger_pressed and not was_trigger and not held_data.is_empty():
 		var held_object: Node = held_data.get("body")
 		if is_instance_valid(held_object) and held_object.name == "EnergyOrbLauncher":
-			_shoot_energy_orb(controller)
+			_shoot_energy_orb(held_object as RigidBody3D)
 	previous_trigger[controller_id] = trigger_pressed
 
 	if grip_pressed and not was_pressed and held_data.is_empty():
@@ -434,5 +496,5 @@ func _move_player(delta: float) -> void:
 	var right := xr_camera.global_basis.x
 	right.y = 0.0
 	right = right.normalized()
-	var movement := (forward * -stick.y + right * stick.x).limit_length(1.0)
+	var movement := (forward * stick.y + right * stick.x).limit_length(1.0)
 	xr_origin.global_position += movement * MOVE_SPEED * delta
