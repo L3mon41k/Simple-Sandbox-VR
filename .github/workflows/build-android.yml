@@ -46,7 +46,7 @@ jobs:
       - name: Export APK
         run: |
           mkdir -p build
-          godot --headless --path . --export-debug "Android OpenXR test" build/SimpleSandboxVR-OpenXR-test.apk
+          godot --headless --path . --install-android-build-template --export-debug "Android OpenXR test" build/SimpleSandboxVR-OpenXR-test.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
