@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   android-apk:
-    name: Export Android ARM64 OpenXR test APK
+    name: Export Android ARM64 PICO OpenXR APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -39,6 +39,22 @@ jobs:
           version: "4.4.1"
           use-dotnet: false
           include-templates: true
+
+      - name: Install Godot OpenXR Vendors plugin
+        run: |
+          mkdir -p /tmp/openxr-vendors addons
+          curl -L --fail --retry 3 \
+            https://github.com/GodotVR/godot_openxr_vendors/releases/download/4.3.1-stable/godotopenxrvendorsaddon.zip \
+            -o /tmp/openxr-vendors/plugin.zip
+          unzip -q /tmp/openxr-vendors/plugin.zip -d /tmp/openxr-vendors
+          PLUGIN_DIR="$(find /tmp/openxr-vendors -type d -path '*/addons/godotopenxrvendors' -print -quit)"
+          if [ -z "$PLUGIN_DIR" ]; then
+            echo "Could not find addons/godotopenxrvendors in the plugin archive."
+            find /tmp/openxr-vendors -maxdepth 5 -type d
+            exit 1
+          fi
+          cp -R "$PLUGIN_DIR" addons/
+          test -d addons/godotopenxrvendors
 
       - name: Configure Godot Android export
         run: |
@@ -70,7 +86,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleSandboxVR-OpenXR-test-debug
+          name: SimpleSandboxVR-PICO-OpenXR-debug
           path: build/SimpleSandboxVR-OpenXR-test.apk
           if-no-files-found: error
           retention-days: 14
