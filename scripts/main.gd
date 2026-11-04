@@ -3,7 +3,9 @@ extends Node3D
 const FLOOR_SIZE := Vector3(12.0, 0.2, 12.0)
 const CUBE_SIZE := Vector3(0.17, 0.17, 0.17)
 const MOVE_SPEED := 2.0
-const GRAB_DISTANCE := 0.28
+const GRAB_DISTANCE := 0.38
+const HAND_PUSH_RADIUS := 0.075
+const ORB_SPEED := 7.0
 
 var xr_active := false
 var xr_origin: XROrigin3D
@@ -14,6 +16,7 @@ var left_hand: Node3D
 var right_hand: Node3D
 var held_by_controller: Dictionary = {}
 var previous_grip: Dictionary = {}
+var previous_trigger: Dictionary = {}
 
 
 func _ready() -> void:
@@ -47,6 +50,11 @@ func _build_environment() -> void:
 	sun.light_color = Color(1.0, 0.94, 0.82)
 	sun.light_energy = 1.25
 	sun.shadow_enabled = true
+	sun.shadow_bias = 0.035
+	sun.shadow_normal_bias = 0.8
+	sun.shadow_blur = 2.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 24.0
 	add_child(sun)
 
 
@@ -76,6 +84,7 @@ func _build_world() -> void:
 	_create_cube(Vector3(-0.32, 1.35, -1.2), Color(0.92, 0.12, 0.10), "RedCube")
 	_create_cube(Vector3(0.32, 1.75, -1.2), Color(0.08, 0.30, 0.96), "BlueCube")
 	_create_test_rod(Vector3(0.72, 1.25, -1.1))
+	_create_energy_launcher(Vector3(-0.72, 1.25, -1.1))
 
 
 func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
@@ -165,8 +174,10 @@ func _setup_xr() -> void:
 
 	left_controller = _create_controller(xr_origin, "LeftController", "left_hand")
 	left_hand = _create_hand_model(left_controller, "LeftLowPolyHand", Color(0.78, 0.62, 0.49), true)
+	_add_hand_collider(left_controller, "LeftHandCollider")
 	right_controller = _create_controller(xr_origin, "RightController", "right_hand")
 	right_hand = _create_hand_model(right_controller, "RightLowPolyHand", Color(0.78, 0.62, 0.49), false)
+	_add_hand_collider(right_controller, "RightHandCollider")
 
 
 func _create_controller(parent: Node3D, node_name: String, tracker_name: String) -> XRController3D:
@@ -215,8 +226,9 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 	var side := -1.0 if is_left else 1.0
 	var thumb := Node3D.new()
 	thumb.name = "Thumb"
-	thumb.position = Vector3(side * 0.052, 0.0, -0.035)
-	thumb.rotation_degrees.y = -side * 40.0
+	thumb.position = Vector3(side * 0.052, 0.018, -0.035)
+	thumb.rotation_degrees.x = 90.0
+	thumb.rotation_degrees.z = side * 18.0
 	hand.add_child(thumb)
 	_add_hand_box(thumb, "ThumbBase", Vector3(0.0, 0.0, -0.025), Vector3(0.019, 0.018, 0.055), skin)
 	_add_hand_box(thumb, "ThumbTip", Vector3(0.0, 0.0, -0.060), Vector3(0.016, 0.016, 0.035), skin)
@@ -235,6 +247,91 @@ func _add_hand_box(parent: Node3D, node_name: String, at: Vector3, dimensions: V
 	parent.add_child(part)
 
 
+func _add_hand_collider(parent: XRController3D, collider_name: String) -> void:
+	var physical_hand := AnimatableBody3D.new()
+	physical_hand.name = collider_name
+	physical_hand.sync_to_physics = true
+	parent.add_child(physical_hand)
+	var collision := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = HAND_PUSH_RADIUS
+	collision.shape = shape
+	collision.position = Vector3(0.0, -0.015, -0.075)
+	physical_hand.add_child(collision)
+
+
+func _create_energy_launcher(at: Vector3) -> void:
+	var body := RigidBody3D.new()
+	body.name = "EnergyOrbLauncher"
+	body.position = at
+	body.mass = 0.55
+	body.gravity_scale = 0.0
+	body.add_to_group("grabbable")
+	add_child(body)
+
+	var dark_material := StandardMaterial3D.new()
+	dark_material.albedo_color = Color(0.16, 0.18, 0.22)
+	dark_material.metallic = 0.45
+	dark_material.roughness = 0.35
+	var glow_material := StandardMaterial3D.new()
+	glow_material.albedo_color = Color(0.12, 0.85, 1.0)
+	glow_material.emission_enabled = true
+	glow_material.emission = Color(0.05, 0.65, 1.0)
+	glow_material.emission_energy_multiplier = 1.6
+
+	_add_launcher_box(body, "Grip", Vector3(0.0, -0.055, 0.0), Vector3(0.075, 0.16, 0.075), dark_material)
+	_add_launcher_box(body, "Body", Vector3(0.0, 0.045, -0.015), Vector3(0.12, 0.10, 0.20), dark_material)
+	_add_launcher_box(body, "EnergyBarrel", Vector3(0.0, 0.045, -0.16), Vector3(0.065, 0.065, 0.18), glow_material)
+
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.13, 0.25, 0.38)
+	collision.shape = shape
+	collision.position = Vector3(0.0, 0.015, -0.07)
+	body.add_child(collision)
+
+
+func _add_launcher_box(parent: Node3D, part_name: String, at: Vector3, dimensions: Vector3, material: Material) -> void:
+	var part := MeshInstance3D.new()
+	part.name = part_name
+	var mesh := BoxMesh.new()
+	mesh.size = dimensions
+	part.mesh = mesh
+	part.position = at
+	part.material_override = material
+	parent.add_child(part)
+
+
+func _shoot_energy_orb(controller: XRController3D) -> void:
+	var orb := RigidBody3D.new()
+	orb.name = "EnergyOrb"
+	orb.mass = 0.08
+	orb.gravity_scale = 0.0
+	orb.continuous_cd = true
+	add_child(orb)
+	orb.global_position = controller.global_position + (-controller.global_basis.z * 0.24)
+
+	var mesh_instance := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.055
+	sphere.height = 0.11
+	mesh_instance.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.15, 0.85, 1.0)
+	material.emission_enabled = true
+	material.emission = Color(0.05, 0.55, 1.0)
+	material.emission_energy_multiplier = 2.0
+	mesh_instance.material_override = material
+	orb.add_child(mesh_instance)
+
+	var collision := CollisionShape3D.new()
+	var sphere_shape := SphereShape3D.new()
+	sphere_shape.radius = 0.055
+	collision.shape = sphere_shape
+	orb.add_child(collision)
+	orb.linear_velocity = -controller.global_basis.z * ORB_SPEED
+
+
 func _update_controller_interaction(controller: XRController3D) -> void:
 	if controller == null:
 		return
@@ -242,6 +339,13 @@ func _update_controller_interaction(controller: XRController3D) -> void:
 	var controller_id := controller.get_instance_id()
 	var grip_pressed := controller.get_float("grip") > 0.55 or controller.is_button_pressed("grip_click")
 	var was_pressed: bool = previous_grip.get(controller_id, false)
+	var trigger_pressed := controller.get_float("trigger") > 0.65 or controller.is_button_pressed("trigger_click")
+	var was_trigger: bool = previous_trigger.get(controller_id, false)
+	if trigger_pressed and not was_trigger and not held_data.is_empty():
+		var held_object: Node = held_data.get("body")
+		if is_instance_valid(held_object) and held_object.name == "EnergyOrbLauncher":
+			_shoot_energy_orb(controller)
+	previous_trigger[controller_id] = trigger_pressed
 	var held_data: Dictionary = held_by_controller.get(controller_id, {})
 
 	if grip_pressed and not was_pressed and held_data.is_empty():
@@ -271,6 +375,14 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 		if candidate.freeze:
 			continue
 		var distance := controller.global_position.distance_to(candidate.global_position)
+		if candidate.name == "GripTestRod":
+			var rod_axis := candidate.global_basis.y.normalized()
+			var from_center := controller.global_position - candidate.global_position
+			var along := clampf(from_center.dot(rod_axis), -0.31, 0.31)
+			var closest_point := candidate.global_position + rod_axis * along
+			distance = controller.global_position.distance_to(closest_point)
+		elif candidate.name == "EnergyOrbLauncher":
+			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.075, 0.14, 0.20))
 		if distance < nearest_distance:
 			nearest = candidate
 			nearest_distance = distance
@@ -284,6 +396,16 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 	nearest.angular_velocity = Vector3.ZERO
 	var relative_transform: Transform3D = controller.global_transform.affine_inverse() * nearest.global_transform
 	held_by_controller[controller_id] = {"body": nearest, "offset": relative_transform}
+
+
+func _distance_to_local_box(world_point: Vector3, object_transform: Transform3D, half_extents: Vector3) -> float:
+	var local_point := object_transform.affine_inverse() * world_point
+	var closest := Vector3(
+		clampf(local_point.x, -half_extents.x, half_extents.x),
+		clampf(local_point.y, -half_extents.y, half_extents.y),
+		clampf(local_point.z, -half_extents.z, half_extents.z)
+	)
+	return local_point.distance_to(closest)
 
 
 func _release_held(controller_id: int) -> void:
