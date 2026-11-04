@@ -35,8 +35,9 @@ func _build_environment() -> void:
 	floor_shape.position.y = -0.1
 	floor_body.add_child(floor_shape)
 
-	_create_cube(Vector3(-0.35, 1.0, -1.2), Color(0.85, 0.16, 0.13), "RedCube")
-	_create_cube(Vector3(0.35, 1.0, -1.2), Color(0.12, 0.38, 0.9), "BlueCube")
+	# Keep the demo cubes suspended at different heights until the player moves them.
+	_create_cube(Vector3(-0.35, 1.35, -1.2), Color(0.85, 0.16, 0.13), "RedCube")
+	_create_cube(Vector3(0.35, 1.85, -1.2), Color(0.12, 0.38, 0.9), "BlueCube")
 
 
 func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
@@ -44,6 +45,7 @@ func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
 	body.name = object_name
 	body.position = at
 	body.mass = 0.5
+	body.gravity_scale = 0.0
 	add_child(body)
 
 	var mesh_instance := MeshInstance3D.new()
@@ -66,11 +68,19 @@ func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
 func _setup_xr() -> void:
 	var openxr := XRServer.find_interface("OpenXR")
 	if openxr == null:
+		push_warning("OpenXR interface is unavailable. Starting desktop preview.")
 		_setup_desktop_preview()
 		return
 
-	if not openxr.initialize():
+	# Some Android runtimes initialize OpenXR before the main scene is ready.
+	# Do not initialize it a second time.
+	if not openxr.is_initialized() and not openxr.initialize():
 		push_warning("OpenXR could not be initialized. Starting desktop preview.")
+		_setup_desktop_preview()
+		return
+
+	if not openxr.is_initialized():
+		push_warning("OpenXR is not initialized. Starting desktop preview.")
 		_setup_desktop_preview()
 		return
 
