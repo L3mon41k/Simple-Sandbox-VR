@@ -34,6 +34,8 @@ func _process(delta: float) -> void:
 	_update_controller_interaction(right_controller)
 	_update_hand_fingers(left_controller)
 	_update_hand_fingers(right_controller)
+	_constrain_hand_to_table(left_controller, left_hand)
+	_constrain_hand_to_table(right_controller, right_hand)
 	_move_player(delta)
 
 
@@ -97,6 +99,9 @@ func _build_world() -> void:
 	_create_table(Vector3(0.0, 0.0, -1.25))
 	_create_cube(Vector3(-0.62, 0.88, -1.18), Color(0.92, 0.12, 0.10), "RedCube")
 	_create_cube(Vector3(-0.20, 0.88, -1.18), Color(0.08, 0.30, 0.96), "BlueCube")
+	_create_bouncy_ball(Vector3(-0.62, 0.94, -1.53))
+	_create_physics_crate(Vector3(-0.20, 0.91, -1.53))
+	_create_rubber_puck(Vector3(0.28, 0.91, -1.53))
 	_create_training_sword(Vector3(0.28, 1.10, -1.18))
 	_create_training_dummy(Vector3(-1.75, 0.0, -1.25))
 	_create_energy_launcher(Vector3(0.70, 0.91, -1.18))
@@ -159,6 +164,97 @@ func _create_cube(at: Vector3, tint: Color, object_name: String) -> void:
 	shape.size = CUBE_SIZE
 	collision.shape = shape
 	body.add_child(collision)
+
+
+func _create_bouncy_ball(at: Vector3) -> void:
+	var ball := RigidBody3D.new()
+	ball.name = "BouncyBall"
+	ball.position = at
+	ball.mass = 0.22
+	ball.gravity_scale = 1.0
+	ball.linear_damp = 0.04
+	ball.angular_damp = 0.08
+	var bounce := PhysicsMaterial.new()
+	bounce.bounce = 0.86
+	bounce.friction = 0.48
+	ball.physics_material_override = bounce
+	ball.add_to_group("grabbable")
+	add_child(ball)
+	var mesh_instance := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.11
+	sphere.height = 0.22
+	mesh_instance.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.95, 0.58, 0.08)
+	material.roughness = 0.38
+	mesh_instance.material_override = material
+	ball.add_child(mesh_instance)
+	var collision := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = 0.11
+	collision.shape = shape
+	ball.add_child(collision)
+
+
+func _create_physics_crate(at: Vector3) -> void:
+	var crate := RigidBody3D.new()
+	crate.name = "SmallCrate"
+	crate.position = at
+	crate.mass = 0.75
+	crate.gravity_scale = 1.0
+	crate.add_to_group("grabbable")
+	var wood_bounce := PhysicsMaterial.new()
+	wood_bounce.bounce = 0.12
+	wood_bounce.friction = 0.9
+	crate.physics_material_override = wood_bounce
+	add_child(crate)
+	var dimensions := Vector3(0.20, 0.20, 0.20)
+	var mesh_instance := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = dimensions
+	mesh_instance.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.48, 0.29, 0.14)
+	material.roughness = 0.92
+	mesh_instance.material_override = material
+	crate.add_child(mesh_instance)
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = dimensions
+	collision.shape = shape
+	crate.add_child(collision)
+
+
+func _create_rubber_puck(at: Vector3) -> void:
+	var puck := RigidBody3D.new()
+	puck.name = "RubberPuck"
+	puck.position = at
+	puck.mass = 0.38
+	puck.gravity_scale = 1.0
+	puck.add_to_group("grabbable")
+	var rubber := PhysicsMaterial.new()
+	rubber.bounce = 0.58
+	rubber.friction = 0.72
+	puck.physics_material_override = rubber
+	add_child(puck)
+	var mesh_instance := MeshInstance3D.new()
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.105
+	mesh.bottom_radius = 0.105
+	mesh.height = 0.07
+	mesh_instance.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.12, 0.68, 0.43)
+	material.roughness = 0.65
+	mesh_instance.material_override = material
+	puck.add_child(mesh_instance)
+	var collision := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = 0.105
+	shape.height = 0.07
+	collision.shape = shape
+	puck.add_child(collision)
 
 
 func _create_training_sword(at: Vector3) -> void:
@@ -299,7 +395,7 @@ func _create_hand_model(parent: Node3D, hand_name: String, skin_color: Color, is
 	var thumb := Node3D.new()
 	thumb.name = "Thumb"
 	thumb.position = Vector3(side * 0.052, 0.018, -0.035)
-	thumb.rotation_degrees.z = side * 30.0
+	thumb.rotation_degrees = Vector3(30.0, -side * 30.0, 0.0)
 	hand.add_child(thumb)
 	_add_hand_box(thumb, "ThumbBase", Vector3(0.0, 0.0, -0.025), Vector3(0.019, 0.018, 0.055), skin)
 	var thumb_tip := Node3D.new()
@@ -349,8 +445,35 @@ func _controller_touch(controller: XRController3D, actions: Array) -> float:
 func _set_finger_curl(joints: Dictionary, amount: float) -> void:
 	var base: Node3D = joints["base"]
 	var tip: Node3D = joints["tip"]
-	base.rotation.x = lerpf(0.0, -1.05, amount)
-	tip.rotation.x = lerpf(0.0, -0.72, amount)
+	# Positive local X folds the fingers toward the palm.
+	base.rotation.x = lerpf(0.0, 1.28, amount)
+	tip.rotation.x = lerpf(0.0, 1.18, amount)
+
+
+func _constrain_hand_to_table(controller: XRController3D, hand: Node3D) -> void:
+	if controller == null or hand == null:
+		return
+	var hand_position := controller.global_position
+	# Constrain the virtual palm and its collider above the tabletop.
+	var inside_table_x := absf(hand_position.x) <= 1.02
+	var inside_table_z := absf(hand_position.z + 1.25) <= 0.56
+	if inside_table_x and inside_table_z:
+		hand_position.y = maxf(hand_position.y, 0.91)
+	hand.global_position = hand_position
+	var collider := controller.get_node_or_null("LeftHandCollider")
+	if collider == null:
+		collider = controller.get_node_or_null("RightHandCollider")
+	if collider is Node3D:
+		(collider as Node3D).global_position = hand_position
+
+
+func _controller_hand_position(controller: XRController3D) -> Vector3:
+	var hand := controller.get_node_or_null("LeftLowPolyHand")
+	if hand == null:
+		hand = controller.get_node_or_null("RightLowPolyHand")
+	if hand is Node3D:
+		return (hand as Node3D).global_position
+	return controller.global_position
 
 
 func _add_hand_box(parent: Node3D, node_name: String, at: Vector3, dimensions: Vector3, material: Material) -> MeshInstance3D:
@@ -604,17 +727,18 @@ func _try_grab_nearest(controller: XRController3D, controller_id: int) -> void:
 		var candidate := node as RigidBody3D
 		if candidate.freeze:
 			continue
-		var distance := controller.global_position.distance_to(candidate.global_position)
+		var hand_position := _controller_hand_position(controller)
+		var distance := hand_position.distance_to(candidate.global_position)
 		if candidate.name == "GripTestRod":
 			var rod_axis := candidate.global_basis.y.normalized()
 			var from_center := controller.global_position - candidate.global_position
 			var along := clampf(from_center.dot(rod_axis), -0.31, 0.31)
 			var closest_point := candidate.global_position + rod_axis * along
-			distance = controller.global_position.distance_to(closest_point)
+			distance = hand_position.distance_to(closest_point)
 		elif candidate.name == "EnergyOrbLauncher":
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.045, 0.085, 0.045), Vector3(0.0, -0.055, 0.0))
+			distance = _distance_to_local_box(hand_position, candidate.global_transform, Vector3(0.045, 0.085, 0.045), Vector3(0.0, -0.055, 0.0))
 		elif candidate.name == "TrainingSword":
-			distance = _distance_to_local_box(controller.global_position, candidate.global_transform, Vector3(0.04, 0.04, 0.11), Vector3(0.0, 0.0, 0.19))
+			distance = _distance_to_local_box(hand_position, candidate.global_transform, Vector3(0.04, 0.04, 0.11), Vector3(0.0, 0.0, 0.19))
 		if distance < nearest_distance:
 			nearest = candidate
 			nearest_distance = distance
@@ -669,4 +793,16 @@ func _move_player(delta: float) -> void:
 	right.y = 0.0
 	right = right.normalized()
 	var movement := (forward * stick.y + right * stick.x).limit_length(1.0)
-	xr_origin.global_position += movement * MOVE_SPEED * delta
+	var requested_motion := movement * MOVE_SPEED * delta
+	var body_shape := SphereShape3D.new()
+	body_shape.radius = 0.22
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = body_shape
+	query.transform = Transform3D(Basis.IDENTITY, xr_origin.global_position + Vector3.UP * 0.92)
+	query.motion = requested_motion
+	query.collision_mask = 1
+	var fractions := get_world_3d().direct_space_state.cast_motion(query)
+	var safe_fraction := 1.0
+	if fractions.size() >= 1:
+		safe_fraction = clampf(fractions[0] - 0.025, 0.0, 1.0)
+	xr_origin.global_position += requested_motion * safe_fraction
